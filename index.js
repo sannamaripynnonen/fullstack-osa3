@@ -1,9 +1,24 @@
-require('dotenv').config()
 const express = require('express')
 const app = express()
-const morgan = require('morgan')
 const cors = require('cors')
+const morgan = require('morgan')
+require('dotenv').config()
+
 const Person = require('./models/person')
+
+const errorHandler = (error, req, res, next) => {
+    console.log(error.message)
+
+    if (error.name === 'CastError') {
+        return res.status(400).send({ error: 'malformatted id'})
+    }
+    
+    next(error)
+}
+
+const unknownEndpont = (req, res) => {
+    res.status(404).send({ error: 'unknown endpoint' })
+}
 
 app.use(cors())
 app.use(express.json())
@@ -16,25 +31,32 @@ app.get('/api/persons', (req, res) => {
     })
 })
 
-app.get('/info', (req, res) => {
+app.get('/info', async (req, res) => {
     console.log('infopage')
-    const phonebookSize = persons.length
+    const phonebookSize = await Person.countDocuments()
     const date = new Date()
     res.send(`<p>Phonebook has info for ${phonebookSize} people</p>
             <p>${date}</p>`)
 })
 
-app.get('/api/persons/:id', (req, res) => {
-    Person.findById(req.params.id).then(person => {
-        res.json(person)
-    })
+app.get('/api/persons/:id', (req, res, next) => {
+    Person.findById(req.params.id)
+        .then(person => {
+            if (person) {
+                res.json(person)
+            } else {
+                res.status(404).end()
+            }
+        })
+        .catch(error => next(error))
 })
 
-app.delete('/api/persons/:id', (req, res) => {
-    const id = Number(req.params.id)
-    persons = persons.filter(person => person.id !== id)
-
-    res.status(204).end()
+app.delete('/api/persons/:id', (req, res, next) => {
+    Person.findByIdAndRemove(req.params.id)
+        .then(result => {
+            res.status(204).end()
+        })
+        .catch(error => next(error))
 })
 
 app.post('/api/persons', (req, res) => {
@@ -59,6 +81,9 @@ app.post('/api/persons', (req, res) => {
         res.json(savedPerson)
     })
 })
+
+app.use(unknownEndpont)
+app.use(errorHandler)
 
 const PORT = process.env.PORT
 app.listen(PORT, () => {
